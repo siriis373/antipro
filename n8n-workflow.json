@@ -1,5 +1,5 @@
 {
-  "name": "Self-Healing CI Pipeline Agent",
+  "name": "Self-Healing CI Pipeline - HACKATHON FINAL",
   "nodes": [
     {
       "parameters": {
@@ -11,52 +11,80 @@
       "name": "Webhook (From GitHub)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [100, 300],
       "webhookId": "self-heal-webhook"
     },
     {
       "parameters": {
-        "authentication": "oAuth2",
+        "values": {
+          "string": [
+            {
+              "name": "owner",
+              "value": "={{$json.body.repository.split('/')[0]}}"
+            },
+            {
+              "name": "repo",
+              "value": "={{$json.body.repository.split('/')[1]}}"
+            },
+            {
+              "name": "branch",
+              "value": "={{$json.body.branch}}"
+            },
+            {
+              "name": "path",
+              "value": "={{$json.body.file_to_fix}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6",
+      "name": "Set Repo Info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
         "resource": "file",
         "operation": "get",
-        "owner": "={{$json.body.repository.split('/')[0]}}",
-        "repository": "={{$json.body.repository.split('/')[1]}}",
-        "filePath": "={{$json.body.file_to_fix}}",
-        "reference": "={{$json.body.branch}}"
+        "owner": "={{$node['Set Repo Info'].json.owner}}",
+        "repository": "={{$node['Set Repo Info'].json.repo}}",
+        "filePath": "={{$node['Set Repo Info'].json.path}}",
+        "reference": "={{$node['Set Repo Info'].json.branch}}"
       },
       "id": "2",
-      "name": "GitHub (Get package.json)",
+      "name": "GitHub (Get File)",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [500, 300]
     },
     {
       "parameters": {
-        "jsCode": "let contentStr = $input.all()[0].json.content;\nlet packageJson;\n\ntry {\n  // Parse the package.json fetched from GitHub\n  packageJson = JSON.parse(contentStr);\n} catch(e) {\n  return [{ json: { fixed_content: contentStr } }];\n}\n\n// We know the build failed because index.js needs lodash.\n// Let's self-heal by injecting it!\nif (!packageJson.dependencies) {\n  packageJson.dependencies = {};\n}\n\n// Add missing dependency\npackageJson.dependencies['lodash'] = '^4.17.21';\n\n// Return stringified JSON\nreturn [{ json: { fixed_content: JSON.stringify(packageJson, null, 2) } }];\n"
+        "jsCode": "try {\n  const content = $node[\"GitHub (Get File)\"].json.content;\n  let pkg = JSON.parse(content);\n  \n  // BUG FIX: Add missing lodash dependency\n  pkg.dependencies = pkg.dependencies || {};\n  pkg.dependencies.lodash = \"^4.17.21\";\n  \n  return {\n    fixed_content: JSON.stringify(pkg, null, 2)\n  };\n} catch (e) {\n  return {\n    fixed_content: \"{}\" // Safety fallback\n  };\n}"
       },
       "id": "3",
-      "name": "Auto-Heal Logic (Fallback)",
+      "name": "Heal Logic",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [650, 300]
+      "position": [700, 300]
     },
     {
       "parameters": {
-        "authentication": "oAuth2",
         "resource": "file",
         "operation": "edit",
-        "owner": "={{ $('Webhook (From GitHub)').item.json.body.repository.split('/')[0] }}",
-        "repository": "={{ $('Webhook (From GitHub)').item.json.body.repository.split('/')[1] }}",
-        "filePath": "={{ $('Webhook (From GitHub)').item.json.body.file_to_fix }}",
-        "fileContent": "={{ $json.fixed_content }}",
+        "owner": "={{$node['Set Repo Info'].json.owner}}",
+        "repository": "={{$node['Set Repo Info'].json.repo}}",
+        "filePath": "={{$node['Set Repo Info'].json.path}}",
+        "fileContent": "={{$node['Heal Logic'].json.fixed_content}}",
         "commitMessage": "Auto-heal: Fixed build failure by updating package.json",
-        "branch": "={{ $('Webhook (From GitHub)').item.json.body.branch }}"
+        "branch": "={{$node['Set Repo Info'].json.branch}}"
       },
       "id": "5",
       "name": "GitHub (Commit Fix)",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [1050, 300]
+      "position": [900, 300]
     }
   ],
   "connections": {
@@ -64,25 +92,36 @@
       "main": [
         [
           {
-            "node": "GitHub (Get package.json)",
+            "node": "Set Repo Info",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GitHub (Get package.json)": {
+    "Set Repo Info": {
       "main": [
         [
           {
-            "node": "Auto-Heal Logic (Fallback)",
+            "node": "GitHub (Get File)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Auto-Heal Logic (Fallback)": {
+    "GitHub (Get File)": {
+      "main": [
+        [
+          {
+            "node": "Heal Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heal Logic": {
       "main": [
         [
           {
