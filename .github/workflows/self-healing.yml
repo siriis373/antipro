@@ -26,16 +26,20 @@ jobs:
         run: npm install && npm run build 2> error.log
 
       - name: Self-Heal on Failure
-        if: steps.build.outcome == 'failure'
+        if: always() && steps.build.outcome == 'failure'
         run: |
-          echo "Build failed! Capturing logs and sending to n8n self-healing agent..."
+          echo "Build failed detected. Starting Self-Heal sequence..."
           
-          # Clean up error log and convert to JSON string
+          if [ -z "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
+            echo "ERROR: N8N_WEBHOOK_URL secret is not set in GitHub!"
+            exit 1
+          fi
+
+          echo "Capturing error.log..."
           ERROR_LOG=$(cat error.log | jq -Rs .)
           
-          N8N_WEBHOOK_URL="${{ secrets.N8N_WEBHOOK_URL }}"
-          
-          curl -X POST $N8N_WEBHOOK_URL \
+          echo "Sending POST request to n8n..."
+          curl -v -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
                -H "Content-Type: application/json" \
                -d "{
                      \"repository\": \"${{ github.repository }}\",
@@ -44,5 +48,5 @@ jobs:
                      \"error_log\": $ERROR_LOG
                    }"
           
-          # Exit with error so the CI run is still marked as failed
+          echo "Self-heal webhook sent."
           exit 1
