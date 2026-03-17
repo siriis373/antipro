@@ -1,5 +1,5 @@
 {
-  "name": "Self-Healing CI - FINAL VERSION",
+  "name": "Self-Healing-CI-HACKATHON-FINAL-FIX",
   "nodes": [
     {
       "parameters": {
@@ -16,38 +16,28 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.all()[0].json.body;\nreturn {\n  owner: body.repository.split('/')[0],\n  repo: body.repository.split('/')[1],\n  branch: body.branch,\n  path: body.file_to_fix\n};"
+        "resource": "file",
+        "operation": "get",
+        "owner": "={{$json.body.repository.split('/')[0]}}",
+        "repository": "={{$json.body.repository.split('/')[1]}}",
+        "filePath": "={{$json.body.file_to_fix}}",
+        "reference": "={{$json.body.branch}}"
       },
       "id": "2",
-      "name": "Prepare Repo Data",
-      "type": "n8n-nodes-base.code",
+      "name": "GitHub Get File",
+      "type": "n8n-nodes-base.github",
       "typeVersion": 1,
       "position": [300, 300]
     },
     {
       "parameters": {
-        "resource": "file",
-        "operation": "get",
-        "owner": "={{$json.owner}}",
-        "repository": "={{$json.repo}}",
-        "filePath": "={{$json.path}}",
-        "reference": "={{$json.branch}}"
+        "jsCode": "// This node takes the file content and the original webhook data\nconst fileData = $input.all()[0].json;\nconst webhookData = $(\"Webhook\").item.json.body;\n\nlet pkg = JSON.parse(fileData.content);\n\n// THE FIX: Add missing dependency\npkg.dependencies = pkg.dependencies || {};\npkg.dependencies.lodash = \"^4.17.21\";\n\nreturn {\n  fixed_content: JSON.stringify(pkg, null, 2),\n  owner: webhookData.repository.split('/')[0],\n  repo: webhookData.repository.split('/')[1],\n  path: webhookData.file_to_fix,\n  branch: webhookData.branch\n};"
       },
       "id": "3",
-      "name": "GitHub Get File",
-      "type": "n8n-nodes-base.github",
-      "typeVersion": 1,
-      "position": [500, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const prev = $node[\"Prepare Repo Data\"].json;\nconst content = $input.all()[0].json.content;\nlet pkg = JSON.parse(content);\n\n// FIXED: Adding missing dependency\npkg.dependencies = pkg.dependencies || {};\npkg.dependencies.lodash = \"^4.17.21\";\n\nreturn {\n  fixed_content: JSON.stringify(pkg, null, 2),\n  owner: prev.owner,\n  repo: prev.repo,\n  path: prev.path,\n  branch: prev.branch\n};"
-      },
-      "id": "4",
-      "name": "Apply Auto-Heal",
+      "name": "Heal Logic",
       "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
-      "position": [700, 300]
+      "typeVersion": 2,
+      "position": [500, 300]
     },
     {
       "parameters": {
@@ -60,26 +50,15 @@
         "commitMessage": "Auto-heal: Fixed build failure by updating package.json",
         "branch": "={{$json.branch}}"
       },
-      "id": "5",
+      "id": "4",
       "name": "GitHub Commit Fix",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [900, 300]
+      "position": [700, 300]
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Prepare Repo Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Repo Data": {
       "main": [
         [
           {
@@ -94,14 +73,14 @@
       "main": [
         [
           {
-            "node": "Apply Auto-Heal",
+            "node": "Heal Logic",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Apply Auto-Heal": {
+    "Heal Logic": {
       "main": [
         [
           {
