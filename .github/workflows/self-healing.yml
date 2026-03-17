@@ -22,22 +22,27 @@ jobs:
 
       - name: Run Build
         id: build
+        continue-on-error: true
+        run: npm install && npm run build 2> error.log
+
+      - name: Self-Heal on Failure
+        if: steps.build.outcome == 'failure'
         run: |
-          npm run build 2> error.log || export BUILD_FAILED=true
-          if [ "$BUILD_FAILED" = "true" ]; then
-            echo "Build failed! Capturing logs and sending to n8n self-healing agent..."
-            ERROR_LOG=$(cat error.log | jq -Rs .)
-            
-            # REPLACE THIS URL WITH YOUR N8N WEBHOOK URL (Use ngrok if n8n is local)
-            N8N_WEBHOOK_URL="${{ secrets.N8N_WEBHOOK_URL }}"
-            
-            curl -X POST $N8N_WEBHOOK_URL \
-                 -H "Content-Type: application/json" \
-                 -d "{
-                       \"repository\": \"${{ github.repository }}\",
-                       \"branch\": \"${{ github.ref_name }}\",
-                       \"file_to_fix\": \"package.json\",
-                       \"error_log\": $ERROR_LOG
-                     }"
-            exit 1 # Fail the build so the pipeline stops
-          fi
+          echo "Build failed! Capturing logs and sending to n8n self-healing agent..."
+          
+          # Clean up error log and convert to JSON string
+          ERROR_LOG=$(cat error.log | jq -Rs .)
+          
+          N8N_WEBHOOK_URL="${{ secrets.N8N_WEBHOOK_URL }}"
+          
+          curl -X POST $N8N_WEBHOOK_URL \
+               -H "Content-Type: application/json" \
+               -d "{
+                     \"repository\": \"${{ github.repository }}\",
+                     \"branch\": \"${{ github.ref_name }}\",
+                     \"file_to_fix\": \"package.json\",
+                     \"error_log\": $ERROR_LOG
+                   }"
+          
+          # Exit with error so the CI run is still marked as failed
+          exit 1
