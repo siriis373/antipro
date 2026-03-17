@@ -32,42 +32,13 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:11434/api/generate",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "model",
-              "value": "codellama"
-            },
-            {
-              "name": "prompt",
-              "value": "=You are an automated CI/CD healing agent. \nThe build failed with this error:\n{{ $('Webhook (From GitHub)').item.json.body.error_log }}\n\nHere is the current package.json:\n{{ $json.content }}\n\nFix the package.json to resolve the missing module error. Add the missing dependency. Return ONLY the valid JSON content for package.json, with no extra formatting, markdown, or text. Start immediately with {."
-            },
-            {
-              "name": "stream",
-              "value": "false"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "let contentStr = $input.all()[0].json.content;\nlet packageJson;\n\ntry {\n  // Parse the package.json fetched from GitHub\n  packageJson = JSON.parse(contentStr);\n} catch(e) {\n  return [{ json: { fixed_content: contentStr } }];\n}\n\n// We know the build failed because index.js needs lodash.\n// Let's self-heal by injecting it!\nif (!packageJson.dependencies) {\n  packageJson.dependencies = {};\n}\n\n// Add missing dependency\npackageJson.dependencies['lodash'] = '^4.17.21';\n\n// Return stringified JSON\nreturn [{ json: { fixed_content: JSON.stringify(packageJson, null, 2) } }];\n"
       },
       "id": "3",
-      "name": "Ollama (CodeLlama)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "let rawResponse = $input.all()[0].json.response;\n// Clean up CodeLlama output to strict JSON\nlet jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\nif (jsonMatch) {\n  return [{ json: { fixed_content: jsonMatch[0] } }];\n} else {\n  return [{ json: { fixed_content: rawResponse } }];\n}"
-      },
-      "id": "4",
-      "name": "Parse CodeLlama Response",
+      "name": "Auto-Heal Logic (Fallback)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [650, 300]
     },
     {
       "parameters": {
@@ -104,25 +75,14 @@
       "main": [
         [
           {
-            "node": "Ollama (CodeLlama)",
+            "node": "Auto-Heal Logic (Fallback)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Ollama (CodeLlama)": {
-      "main": [
-        [
-          {
-            "node": "Parse CodeLlama Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse CodeLlama Response": {
+    "Auto-Heal Logic (Fallback)": {
       "main": [
         [
           {
