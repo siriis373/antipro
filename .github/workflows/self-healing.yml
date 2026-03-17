@@ -1,0 +1,43 @@
+name: Self-Healing CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Build
+        id: build
+        run: |
+          npm run build 2> error.log || export BUILD_FAILED=true
+          if [ "$BUILD_FAILED" = "true" ]; then
+            echo "Build failed! Capturing logs and sending to n8n self-healing agent..."
+            ERROR_LOG=$(cat error.log | jq -Rs .)
+            
+            # REPLACE THIS URL WITH YOUR N8N WEBHOOK URL (Use ngrok if n8n is local)
+            N8N_WEBHOOK_URL="${{ secrets.N8N_WEBHOOK_URL }}"
+            
+            curl -X POST $N8N_WEBHOOK_URL \
+                 -H "Content-Type: application/json" \
+                 -d "{
+                       \"repository\": \"${{ github.repository }}\",
+                       \"branch\": \"${{ github.ref_name }}\",
+                       \"file_to_fix\": \"package.json\",
+                       \"error_log\": $ERROR_LOG
+                     }"
+            exit 1 # Fail the build so the pipeline stops
+          fi

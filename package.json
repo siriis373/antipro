@@ -1,0 +1,12 @@
+{
+  "name": "auto-heal-demo",
+  "version": "1.0.0",
+  "description": "Demo for Self-Healing CI/CD Pipeline",
+  "main": "index.js",
+  "scripts": {
+    "build": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

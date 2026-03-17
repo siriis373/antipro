@@ -1,0 +1,137 @@
+{
+  "name": "Self-Healing CI Pipeline Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "self-heal",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook (From GitHub)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "self-heal-webhook"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "get",
+        "owner": "={{$json.body.repository.split('/')[0]}}",
+        "repository": "={{$json.body.repository.split('/')[1]}}",
+        "filePath": "={{$json.body.file_to_fix}}",
+        "reference": "={{$json.body.branch}}"
+      },
+      "id": "2",
+      "name": "GitHub (Get package.json)",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:11434/api/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "codellama"
+            },
+            {
+              "name": "prompt",
+              "value": "=You are an automated CI/CD healing agent. \nThe build failed with this error:\n{{ $('Webhook (From GitHub)').item.json.body.error_log }}\n\nHere is the current package.json:\n{{ $json.content }}\n\nFix the package.json to resolve the missing module error. Add the missing dependency. Return ONLY the valid JSON content for package.json, with no extra formatting, markdown, or text. Start immediately with {."
+            },
+            {
+              "name": "stream",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Ollama (CodeLlama)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "let rawResponse = $input.all()[0].json.response;\n// Clean up CodeLlama output to strict JSON\nlet jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\nif (jsonMatch) {\n  return [{ json: { fixed_content: jsonMatch[0] } }];\n} else {\n  return [{ json: { fixed_content: rawResponse } }];\n}"
+      },
+      "id": "4",
+      "name": "Parse CodeLlama Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "edit",
+        "owner": "={{ $('Webhook (From GitHub)').item.json.body.repository.split('/')[0] }}",
+        "repository": "={{ $('Webhook (From GitHub)').item.json.body.repository.split('/')[1] }}",
+        "filePath": "={{ $('Webhook (From GitHub)').item.json.body.file_to_fix }}",
+        "fileContent": "={{ $json.fixed_content }}",
+        "commitMessage": "Auto-heal: Fixed build failure by updating package.json",
+        "branch": "={{ $('Webhook (From GitHub)').item.json.body.branch }}"
+      },
+      "id": "5",
+      "name": "GitHub (Commit Fix)",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook (From GitHub)": {
+      "main": [
+        [
+          {
+            "node": "GitHub (Get package.json)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub (Get package.json)": {
+      "main": [
+        [
+          {
+            "node": "Ollama (CodeLlama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama (CodeLlama)": {
+      "main": [
+        [
+          {
+            "node": "Parse CodeLlama Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CodeLlama Response": {
+      "main": [
+        [
+          {
+            "node": "GitHub (Commit Fix)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
