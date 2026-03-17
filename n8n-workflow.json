@@ -1,5 +1,5 @@
 {
-  "name": "Self-Healing CI Pipeline - HACKATHON FINAL",
+  "name": "Self-Healing CI - FINAL VERSION",
   "nodes": [
     {
       "parameters": {
@@ -8,7 +8,7 @@
         "options": {}
       },
       "id": "1",
-      "name": "Webhook (From GitHub)",
+      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [100, 300],
@@ -16,31 +16,11 @@
     },
     {
       "parameters": {
-        "values": {
-          "string": [
-            {
-              "name": "owner",
-              "value": "={{$json.body.repository.split('/')[0]}}"
-            },
-            {
-              "name": "repo",
-              "value": "={{$json.body.repository.split('/')[1]}}"
-            },
-            {
-              "name": "branch",
-              "value": "={{$json.body.branch}}"
-            },
-            {
-              "name": "path",
-              "value": "={{$json.body.file_to_fix}}"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "const body = $input.all()[0].json.body;\nreturn {\n  owner: body.repository.split('/')[0],\n  repo: body.repository.split('/')[1],\n  branch: body.branch,\n  path: body.file_to_fix\n};"
       },
-      "id": "6",
-      "name": "Set Repo Info",
-      "type": "n8n-nodes-base.set",
+      "id": "2",
+      "name": "Prepare Repo Data",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [300, 300]
     },
@@ -48,84 +28,84 @@
       "parameters": {
         "resource": "file",
         "operation": "get",
-        "owner": "={{$node['Set Repo Info'].json.owner}}",
-        "repository": "={{$node['Set Repo Info'].json.repo}}",
-        "filePath": "={{$node['Set Repo Info'].json.path}}",
-        "reference": "={{$node['Set Repo Info'].json.branch}}"
+        "owner": "={{$json.owner}}",
+        "repository": "={{$json.repo}}",
+        "filePath": "={{$json.path}}",
+        "reference": "={{$json.branch}}"
       },
-      "id": "2",
-      "name": "GitHub (Get File)",
+      "id": "3",
+      "name": "GitHub Get File",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
       "position": [500, 300]
     },
     {
       "parameters": {
-        "jsCode": "try {\n  const content = $node[\"GitHub (Get File)\"].json.content;\n  let pkg = JSON.parse(content);\n  \n  // BUG FIX: Add missing lodash dependency\n  pkg.dependencies = pkg.dependencies || {};\n  pkg.dependencies.lodash = \"^4.17.21\";\n  \n  return {\n    fixed_content: JSON.stringify(pkg, null, 2)\n  };\n} catch (e) {\n  return {\n    fixed_content: \"{}\" // Safety fallback\n  };\n}"
+        "jsCode": "const prev = $node[\"Prepare Repo Data\"].json;\nconst content = $input.all()[0].json.content;\nlet pkg = JSON.parse(content);\n\n// FIXED: Adding missing dependency\npkg.dependencies = pkg.dependencies || {};\npkg.dependencies.lodash = \"^4.17.21\";\n\nreturn {\n  fixed_content: JSON.stringify(pkg, null, 2),\n  owner: prev.owner,\n  repo: prev.repo,\n  path: prev.path,\n  branch: prev.branch\n};"
       },
-      "id": "3",
-      "name": "Heal Logic",
+      "id": "4",
+      "name": "Apply Auto-Heal",
       "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "typeVersion": 1,
       "position": [700, 300]
     },
     {
       "parameters": {
         "resource": "file",
         "operation": "edit",
-        "owner": "={{$node['Set Repo Info'].json.owner}}",
-        "repository": "={{$node['Set Repo Info'].json.repo}}",
-        "filePath": "={{$node['Set Repo Info'].json.path}}",
-        "fileContent": "={{$node['Heal Logic'].json.fixed_content}}",
+        "owner": "={{$json.owner}}",
+        "repository": "={{$json.repo}}",
+        "filePath": "={{$json.path}}",
+        "fileContent": "={{$json.fixed_content}}",
         "commitMessage": "Auto-heal: Fixed build failure by updating package.json",
-        "branch": "={{$node['Set Repo Info'].json.branch}}"
+        "branch": "={{$json.branch}}"
       },
       "id": "5",
-      "name": "GitHub (Commit Fix)",
+      "name": "GitHub Commit Fix",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
       "position": [900, 300]
     }
   ],
   "connections": {
-    "Webhook (From GitHub)": {
+    "Webhook": {
       "main": [
         [
           {
-            "node": "Set Repo Info",
+            "node": "Prepare Repo Data",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Set Repo Info": {
+    "Prepare Repo Data": {
       "main": [
         [
           {
-            "node": "GitHub (Get File)",
+            "node": "GitHub Get File",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GitHub (Get File)": {
+    "GitHub Get File": {
       "main": [
         [
           {
-            "node": "Heal Logic",
+            "node": "Apply Auto-Heal",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Heal Logic": {
+    "Apply Auto-Heal": {
       "main": [
         [
           {
-            "node": "GitHub (Commit Fix)",
+            "node": "GitHub Commit Fix",
             "type": "main",
             "index": 0
           }
