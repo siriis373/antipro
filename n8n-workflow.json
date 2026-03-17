@@ -1,5 +1,5 @@
 {
-  "name": "Self-Healing-CI-HACKATHON-FINAL-FIX",
+  "name": "Self-Healing-CI-HACKATHON-GOD-MODE",
   "nodes": [
     {
       "parameters": {
@@ -11,33 +11,43 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [100, 300],
+      "position": [0, 0],
       "webhookId": "self-heal-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.all()[0].json.body;\nreturn {\n  owner: body.repository.split('/')[0],\n  repo: body.repository.split('/')[1],\n  branch: body.branch,\n  path: body.file_to_fix\n};"
+      },
+      "id": "2",
+      "name": "Parse_Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0]
     },
     {
       "parameters": {
         "resource": "file",
         "operation": "get",
-        "owner": "={{$json.body.repository.split('/')[0]}}",
-        "repository": "={{$json.body.repository.split('/')[1]}}",
-        "filePath": "={{$json.body.file_to_fix}}",
-        "reference": "={{$json.body.branch}}"
+        "owner": "={{$json.owner}}",
+        "repository": "={{$json.repo}}",
+        "filePath": "={{$json.path}}",
+        "reference": "={{$json.branch}}"
       },
-      "id": "2",
-      "name": "GitHub Get File",
+      "id": "3",
+      "name": "Get_Original_File",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [300, 300]
+      "position": [400, 0]
     },
     {
       "parameters": {
-        "jsCode": "// This node takes the file content and the original webhook data\nconst fileData = $input.all()[0].json;\nconst webhookData = $(\"Webhook\").item.json.body;\n\nlet pkg = JSON.parse(fileData.content);\n\n// THE FIX: Add missing dependency\npkg.dependencies = pkg.dependencies || {};\npkg.dependencies.lodash = \"^4.17.21\";\n\nreturn {\n  fixed_content: JSON.stringify(pkg, null, 2),\n  owner: webhookData.repository.split('/')[0],\n  repo: webhookData.repository.split('/')[1],\n  path: webhookData.file_to_fix,\n  branch: webhookData.branch\n};"
+        "jsCode": "// This node gets the file content from the previous node\n// AND retrieves the repo info from the box before that to keep it alive\nconst repoInfo = $(\"Parse_Request\").first().json;\nconst content = $input.all()[0].json.content;\n\nlet pkg = JSON.parse(content);\n\n// THE FIX: Add missing lodash\npkg.dependencies = pkg.dependencies || {};\npkg.dependencies.lodash = \"^4.17.21\";\n\nreturn {\n  fixed_content: JSON.stringify(pkg, null, 2),\n  owner: repoInfo.owner,\n  repo: repoInfo.repo,\n  path: repoInfo.path,\n  branch: repoInfo.branch\n};"
       },
-      "id": "3",
-      "name": "Heal Logic",
+      "id": "4",
+      "name": "Analyze_and_Fix",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [500, 300]
+      "position": [600, 0]
     },
     {
       "parameters": {
@@ -50,11 +60,11 @@
         "commitMessage": "Auto-heal: Fixed build failure by updating package.json",
         "branch": "={{$json.branch}}"
       },
-      "id": "4",
-      "name": "GitHub Commit Fix",
+      "id": "5",
+      "name": "Push_Fix_to_GitHub",
       "type": "n8n-nodes-base.github",
       "typeVersion": 1,
-      "position": [700, 300]
+      "position": [800, 0]
     }
   ],
   "connections": {
@@ -62,29 +72,40 @@
       "main": [
         [
           {
-            "node": "GitHub Get File",
+            "node": "Parse_Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GitHub Get File": {
+    "Parse_Request": {
       "main": [
         [
           {
-            "node": "Heal Logic",
+            "node": "Get_Original_File",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Heal Logic": {
+    "Get_Original_File": {
       "main": [
         [
           {
-            "node": "GitHub Commit Fix",
+            "node": "Analyze_and_Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze_and_Fix": {
+      "main": [
+        [
+          {
+            "node": "Push_Fix_to_GitHub",
             "type": "main",
             "index": 0
           }
